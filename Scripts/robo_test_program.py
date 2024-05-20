@@ -1,4 +1,5 @@
 import odrive
+from odrive.enums import *
 import sys
 import time
 import RPi.GPIO as GPIO
@@ -9,6 +10,19 @@ import asyncio
 
 
 print("Starting robot test script!")
+print("finding odrive")
+odrv0 = odrive.find_any()
+## Initialize odrive
+time.sleep(1)
+
+if not odrv0:
+    print("Couldn't find any odrive connected! Please double check your connection!")
+else:
+    print(str(odrv0.vbus_voltage))
+    odrv0.axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
+    time.sleep(1)
+    odrv0.axis0.controller.input_pos = 1.0
+
 
 
 ## Initialize GPIO and necessary parameters
@@ -200,7 +214,8 @@ async def update_pos():
     global arm2_desired_angle, arm2_ismoving, arm2Speed
     global axis_lx_last_ping, axis_ly_last_ping, axis_rx_last_ping, axis_ry_last_ping
     input_update_inter = .050
-    axis_spacing = 0.5
+    axis_spacing = 0.4
+
 
     if time.time() - axis_rx_last_ping > input_update_inter:
         axis_rx_last_ping = time.time()
@@ -255,17 +270,39 @@ async def update_pos():
     # await asyncio.create_task(move_arm2())
 
 async def main():
+    global base_desired_angle, arm1_desired_angle, arm2_desired_angle, claw_desired_angle
+    global base_pos, arm1_pos, arm2_pos, claw_pos
     try:
         with Xbox360Controller(0, axis_threshold=0.1) as controller:
             controller.button_a.when_pressed = button_a_pressed
             controller.axis_r.when_moved = rightJoystickMoved
             controller.axis_l.when_moved = leftJoystickMoved
 
+            base_desired_angle = 0
+            arm1_desired_angle = -45
+            arm2_desired_angle = -45
+            claw_desired_angle = 0
+
             while(True):
                 await update_pos()
             # signal.pause()
 
     except KeyboardInterrupt:
+        arm1_desired_angle = 0
+        arm2_desired_angle = 0
+        claw_desired_angle = 0
+        base_desired_angle = 0
+        while(abs(base_pos) > 1 or abs(arm1_pos) > 1 or abs(arm2_pos) > 1 or abs(claw_pos) > 1):
+            await update_pos()
+
+        if odrv0:
+            odrv0.axis0.controller.input_pos = 0
+            while(abs(odrv0.axis0.pos_vel_mapper.pos_rel) > 0.01):
+                time.sleep(0.1)
+
+            odrv0.axis0.requested_state = AXIS_STATE_IDLE
+
+
         GPIO.output(baseEn, GPIO.HIGH)
         GPIO.output(arm1En, GPIO.HIGH)
         GPIO.output(arm2En, GPIO.HIGH)

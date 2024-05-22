@@ -93,7 +93,7 @@ base_desired_angle = 0
 arm1_desired_angle = 0
 arm2_desired_angle = 0
 claw_desired_angle = 0
-bldc_desired_rot = init_pos
+bldc_desired_rot : float = init_pos
 
 base_last_step = time.time_ns()
 arm1_last_step = time.time_ns()
@@ -116,10 +116,16 @@ axis_ly = 0
 axis_rx = 0
 axis_ry = 0
 
+hat_x = 0
+hat_y = 0
+
 axis_lx_last_ping = time.time()
 axis_ly_last_ping = time.time()
 axis_rx_last_ping = time.time()
 axis_ry_last_ping = time.time()
+
+hat_x_last_ping = time.time()
+hat_y_last_ping = time.time()
 
 def button_a_pressed():
     pass
@@ -136,6 +142,11 @@ def rightJoystickMoved(axis):
     # print('Axis {0} moved to {1} {2}'.format(axis.name, axis.x, axis.y))
     axis_rx = axis.x
     axis_ry = axis.y
+
+def hatMoved(axis):
+    global hat_x, hat_y
+    hat_x = axis.x
+    hat_y = axis.y
 
 async def move_base():
     global base_pos, base_desired_angle, baseStepAngle, time_between_steps, baseSpeed, base_last_step, baseDir
@@ -204,6 +215,10 @@ async def move_arm2():
             # GPIO.output(arm2Step, GPIO.LOW)
             # await asyncio.sleep(time_between_steps)
 
+async def move_bldc():
+    global bldc_desired_rot, odrv0
+    odrv0.axis0.controller.input_pos = bldc_desired_rot
+
 async def update_all():
     await asyncio.create_task(move_base())
     await asyncio.create_task(move_claw())
@@ -257,6 +272,17 @@ async def update_pos():
             arm2_desired_angle -= arm2Speed * glob_speed_mult * arm2_dir_mult
             print("Arm2 Desired Angle: " + str(arm2_desired_angle))
 
+    if time.time() - hat_x > input_update_inter:
+        hat_x = time.time()
+        if hat_x > axis_spacing:
+            bldc_desired_rot += 0.05 * glob_speed_mult
+            print("Bldc Desired Rotation: " + str(bldc_desired_rot))
+        elif hat_x < -axis_spacing:
+            bldc_desired_rot -= 0.05 * glob_speed_mult
+            print("Bldc Desired Rotation: " + str(bldc_desired_rot))
+
+
+
     await move_base()
     await move_claw()
     await move_arm1()
@@ -281,6 +307,9 @@ async def main():
             controller.button_a.when_pressed = button_a_pressed
             controller.axis_r.when_moved = rightJoystickMoved
             controller.axis_l.when_moved = leftJoystickMoved
+            controller.hat.when_moved = hatMoved
+
+            
 
             base_desired_angle = 0
             arm1_desired_angle = -45
